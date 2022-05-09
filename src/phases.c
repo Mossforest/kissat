@@ -86,3 +86,13 @@ kissat_save_target_phases (kissat * solver)
   LOG ("saving %u target values", VARS);
   save_phases (solver, solver->phases.target);
 }
+
+void
+kissat_save_relaxed_phases (kissat * solver)
+{
+  LOG ("saving %u relaxed values", VARS);
+  const value *v = solver->values;
+  for (all_phases (p))
+    p->relaxed = *v, v += 2;
+  assert (v == solver->values + LITS);
+}

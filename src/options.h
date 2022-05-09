@@ -138,6 +138,7 @@ OPTION( vivifytier2, 6, 1, 100, "relative tier2 effort") \
 OPTION( walkeffort, 5, 0, 1e6, "effort in per mille") \
 OPTION( walkfit, 1, 0, 1, "fit CB value to average clause length") \
 OPTION( walkinitially, 0, 0, 1, "initial local search") \
+OPTION( walkrelax, 5, 5, 1e5, "rounds per walking relax") \
 OPTION( walkreuse, 1, 0, 2, "reuse walking results (2=always)") \
 OPTION( walkweighted, 1, 0, 1, "use clause weights") \
 OPTION( xors, 1, 0, 1, "extract and eliminate XOR gates") \

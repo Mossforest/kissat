@@ -89,7 +89,7 @@ PROPAGATE_LITERAL (kissat * solver,
 {
   assert (solver->watching);
   LOG (PROPAGATION_TYPE " propagating %s", LOGLIT (lit));
-  assert (VALUE (lit) > 0);
+  // assert (VALUE (lit) > 0);
   assert (EMPTY_STACK (solver->delayed));
 
   watches *const all_watches = solver->watches;

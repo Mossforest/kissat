@@ -17,6 +17,7 @@ typedef struct walker walker;
 
 #define LD_MAX_WALK_REF 31
 #define MAX_WALK_REF ((1u << LD_MAX_WALK_REF) - 1)
+value *init_relaxed;
 
 struct tagged
 {
@@ -474,6 +475,71 @@ connect_large_counters (walker * walker, unsigned counter_ref)
 #endif
 }
 
+static void
+connect_large_counters_relaxed (walker * walker, unsigned counter_ref)
+{
+  kissat *solver = walker->solver;
+  assert (!solver->level);
+  const value *const values = solver->values;
+  ward *const arena = BEGIN_STACK (solver->arena);
+  counter *counters = walker->counters;
+  tagged *refs = walker->refs;
+
+  unsigned unsat = 0;
+  unsigned large = 0;
+
+  clause *last_irredundant = kissat_last_irredundant_clause (solver);
+
+  for (all_clauses (c))
+    {
+      if (last_irredundant && c > last_irredundant)
+	break;
+      if (c->garbage)
+	continue;
+      if (c->redundant)
+	continue;
+      large++;
+      assert (kissat_clause_in_arena (solver, c));
+      reference clause_ref = (ward *) c - arena;
+      assert (clause_ref <= MAX_WALK_REF);
+      assert (counter_ref < walker->clauses);
+      refs[counter_ref] = make_tagged (false, clause_ref);
+      unsigned count = 0, size = 0;
+      for (all_literals_in_clause (lit, c))
+	{
+	  const value value = values[lit];
+	  if (!value)
+	    {
+	      assert (saved[lit] < 0);
+	      continue;
+	    }
+	  watches *watches = &WATCHES (lit);
+	  kissat_push_large_watch (solver, watches, counter_ref);
+	  size++;
+	  if (value > 0)
+	    count++;
+	}
+      counter *counter = walker->counters + counter_ref;
+      counter->count = count;
+      counter->weight = clause_weight (walker, size);
+
+      if (!count)
+	{
+	  push_unsat (solver, walker, counters, counter_ref);
+	  unsat++;
+	}
+      counter_ref++;
+      walker->size += size;
+    }
+  kissat_phase (solver, "walk", GET (walks),
+		"initially %u unsatisfied large clauses %.0f%% out of %u",
+		unsat, kissat_percent (unsat, large), large);
+#ifdef QUIET
+  (void) large;
+  (void) unsat;
+#endif
+}
+
 #ifndef QUIET
 
 static void
@@ -571,6 +637,69 @@ init_walker (kissat * solver, walker * walker,
 }
 
 static void
+init_walker_relaxed (kissat * solver, walker * walker, litpairs * binaries)
+{
+  assert (IRREDUNDANT_CLAUSES <= MAX_WALK_REF);
+  const unsigned clauses = IRREDUNDANT_CLAUSES;
+
+  memset (walker, 0, sizeof *walker);
+
+  walker->solver = solver;
+  walker->clauses = clauses;
+  walker->binaries = binaries;
+  walker->random = solver->random ^ solver->statistics.walks;
+
+  kissat_free (solver, solver->values, LITS);
+  solver->values = init_relaxed;
+  walker->saved = solver->values;
+
+  if (GET_OPTION (walkweighted))
+    switch (GET (walks) % 3)
+      {
+      case 1:
+      UNIFORM:
+	kissat_very_verbose (solver, "uniform clause weight one");
+	walker->weighted = 0;
+	break;
+      case 2:
+	kissat_very_verbose (solver, "monotone increasing clause weights");
+	walker->weighted = 1;
+	break;
+      default:
+	kissat_very_verbose (solver, "monotone decreasing clause weights");
+	walker->weighted = -1;
+	break;
+      }
+  else
+    goto UNIFORM;
+
+  walker->counters = kissat_malloc (solver, clauses * sizeof (counter));
+  walker->refs = kissat_malloc (solver, clauses * sizeof (tagged));
+
+  assert (!walker->size);
+  const unsigned counter_ref = connect_binary_counters (walker);
+  connect_large_counters_relaxed (walker, counter_ref);
+
+  walker->current = walker->initial = currently_unsatified (walker);
+
+  kissat_phase (solver, "walk", GET (walks),
+		"initially %u unsatisfied irredundant clauses %.0f%% "
+		"out of %" PRIu64, walker->initial,
+		kissat_percent (walker->initial, IRREDUNDANT_CLAUSES),
+		IRREDUNDANT_CLAUSES);
+
+  walker->size = kissat_average (walker->size, clauses);
+  kissat_phase (solver, "walk", GET (walks),
+		"average clause size %.2f", walker->size);
+
+  walker->minimum = walker->current;
+  init_score_table (walker);
+
+  report_initial_minimum (solver, walker);
+
+}
+
+static void
 init_walker_limit (kissat * solver, walker * walker)
 {
   SET_EFFORT_LIMIT (limit, walk, walk_steps, 2 * CLAUSES);
@@ -599,6 +728,19 @@ release_walker (walker * walker)
   solver->values = walker->saved;
 }
 
+static void
+release_walker_relaxed (walker * walker)
+{
+  kissat *solver = walker->solver;
+  kissat_dealloc (solver, walker->table, walker->exponents, sizeof (double));
+  unsigned clauses = walker->clauses;
+  kissat_dealloc (solver, walker->refs, clauses, sizeof (tagged));
+  kissat_dealloc (solver, walker->counters, clauses, sizeof (counter));
+  RELEASE_STACK (walker->unsat);
+  RELEASE_STACK (walker->scores);
+  RELEASE_STACK (walker->trail);
+  RELEASE_STACK (walker->unsat);
+}
 static unsigned
 break_value (kissat * solver, walker * walker, value * values, unsigned lit)
 {
@@ -610,7 +752,7 @@ break_value (kissat * solver, walker * walker, value * values, unsigned lit)
   for (all_binary_large_watches (watch, *watches))
     {
       steps++;
-      assert (!watch.type.binary);
+      // assert (!watch.type.binary);
       reference counter_ref = watch.large.ref;
       assert (counter_ref < walker->clauses);
       counter *counter = walker->counters + counter_ref;
@@ -760,7 +902,7 @@ make_clauses (kissat * solver, walker * walker,
   for (all_binary_large_watches (watch, *watches))
     {
       steps++;
-      assert (!watch.type.binary);
+      // assert (!watch.type.binary);
       const unsigned counter_ref = watch.large.ref;
       assert (counter_ref < walker->clauses);
       counter *counter = counters + counter_ref;
@@ -944,12 +1086,16 @@ local_search_step (kissat * solver, walker * walker)
   LOG ("starting local search flip %" PRIu64 " with %u unsatisfied clauses",
        GET (flipped), walker->current);
   unsigned lit = pick_literal (solver, walker);
-  flip_literal (solver, walker, lit);
-  push_flipped (solver, walker, lit);
-  if (walker->current < walker->minimum)
-    update_best (solver, walker);
-  LOG ("ending local search step %" PRIu64 " with %u unsatisfied clauses",
-       GET (flipped), walker->current);
+  const flags *flags = solver->flags;
+  const unsigned idx = IDX (lit);
+  if (!flags[idx].fixed) {
+	  flip_literal (solver, walker, lit);
+	  push_flipped (solver, walker, lit);
+	  if (walker->current < walker->minimum)
+	    update_best (solver, walker);
+	  LOG ("ending local search step %" PRIu64 " with %u unsatisfied clauses",
+	       GET (flipped), walker->current);
+  } 
 }
 
 static void
@@ -1126,6 +1272,33 @@ walking_phase (kissat * solver, bool first_time, bool use_previous_phase)
 #endif
 }
 
+static bool
+walking_relaxed (kissat * solver)
+{
+  init_relaxed = solver->values;
+  solver->values = kissat_calloc (solver, LITS, 1);
+
+  INC (walks);
+  litpairs irredundant;
+  litwatches redundant;
+  INIT_STACK (irredundant);
+  INIT_STACK (redundant);
+
+  kissat_enter_dense_mode (solver, &irredundant, &redundant);
+  walker walker;
+  init_walker_relaxed (solver, &walker, &irredundant);
+  init_walker_limit (solver, &walker);
+  local_search_round (&walker);
+
+  bool res = (!walker.current) ? true : false;
+  if (res) assert(SIZE_STACK(walker.unsat) == 0);
+  release_walker_relaxed (&walker);
+  kissat_resume_sparse_mode_relaxed (solver, false, &irredundant, &redundant);
+  RELEASE_STACK (irredundant);
+  RELEASE_STACK (redundant);
+  return res;
+}
+
 bool
 kissat_walking (kissat * solver)
 {
@@ -1182,6 +1355,18 @@ walk (kissat * solver, bool first_time, bool use_previous_phase)
   STOP_SEARCH_AND_START_SIMPLIFIER (walking);
   walking_phase (solver, first_time, use_previous_phase);
   STOP_SIMPLIFIER_AND_RESUME_SEARCH (walking);
+}
+
+bool
+kissat_walk_relaxed (kissat * solver)
+{
+  solver->level = 0;
+  assert (!solver->inconsistent);
+  assert (kissat_propagated (solver));
+  STOP_SEARCH_AND_START_SIMPLIFIER (walking);
+  bool res = walking_phase (solver, first_time, use_previous_phase);
+  STOP_SIMPLIFIER_AND_RESUME_SEARCH (walking);
+  return res;
 }
 
 void

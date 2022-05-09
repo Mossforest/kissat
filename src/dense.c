@@ -325,3 +325,38 @@ kissat_resume_sparse_mode (kissat * solver, bool flush_eliminated,
   (void) conflict;
 #endif
 }
+
+void
+kissat_resume_sparse_mode_relaxed (kissat * solver, bool flush_eliminated,
+			   litpairs * irredundant, litwatches * redundant)
+{
+  assert (!solver->level);
+  assert (!solver->watching);
+  if (solver->inconsistent)
+    return;
+  LOG ("resuming sparse mode watching clauses");
+  kissat_flush_large_connected (solver);
+  LOG ("switched to watching clauses");
+  solver->watching = true;
+  if (irredundant)
+    {
+      LOG ("resuming watching %zu irredundant binaries",
+	   SIZE_STACK (*irredundant));
+      resume_watching_irredundant_binaries (solver, irredundant);
+    }
+  if (redundant)
+    {
+      LOG ("resuming watching %zu redundant binaries",
+	   SIZE_STACK (*redundant));
+      if (flush_eliminated)
+	resume_watching_binaries_after_elimination (solver, redundant);
+      else
+	completely_resume_watching_binaries (solver, redundant);
+    }
+  if (flush_eliminated)
+    resume_watching_large_clauses_after_elimination (solver);
+  else
+    kissat_watch_large_clauses (solver);
+  LOG ("forcing to propagate units on all clauses");
+  solver->propagated = 0;
+}

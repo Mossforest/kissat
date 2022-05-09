@@ -46,6 +46,17 @@ search_propagate (kissat * solver)
   return res;
 }
 
+static clause *
+search_propagate_relaxed (kissat * solver)
+{
+  clause *res = 0;
+  unsigned *propagate = solver->propagate;
+  while (propagate != END_ARRAY (solver->trail)) //!res && 
+    res = search_propagate_literal (solver, *propagate++);
+  solver->propagate = propagate;
+  return res;
+}
+
 clause *
 kissat_search_propagate (kissat * solver)
 {
@@ -58,6 +69,26 @@ kissat_search_propagate (kissat * solver)
   solver->ticks = 0;
   const unsigned *saved_propagate = solver->propagate;
   clause *conflict = search_propagate (solver);
+  update_search_propagation_statistics (solver, saved_propagate);
+  kissat_update_conflicts_and_trail (solver, conflict, true);
+
+  STOP (propagate);
+
+  return conflict;
+}
+
+clause *
+kissat_search_propagate_relaxed (kissat * solver)
+{
+  assert (!solver->probing);
+  assert (solver->watching);
+  assert (!solver->inconsistent);
+
+  START (propagate);
+
+  solver->ticks = 0;
+  const unsigned *saved_propagate = solver->propagate;
+  clause *conflict = search_propagate_relaxed (solver);
   update_search_propagation_statistics (solver, saved_propagate);
   kissat_update_conflicts_and_trail (solver, conflict, true);
 

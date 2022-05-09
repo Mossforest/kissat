@@ -9,6 +9,7 @@
 #include "propsearch.h"
 #include "search.h"
 #include "reduce.h"
+#include "relaxed.h"
 #include "reluctant.h"
 #include "report.h"
 #include "restart.h"
@@ -165,8 +166,14 @@ kissat_search (kissat * solver)
   while (!res)
     {
       clause *conflict = kissat_search_propagate (solver);
-      if (conflict)
+      if (conflict) {
 	res = kissat_analyze (solver, conflict);
+        if(res) break;
+        else if (kissat_meet_relaxed_condition(solver)) {
+          printf("Enter the condition\n");
+  res = kissat_relaxed_propagate(solver);
+        }
+      }
       else if (solver->iterating)
 	iterate (solver);
       else if (!solver->unassigned)
