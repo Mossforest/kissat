@@ -358,5 +358,5 @@ kissat_resume_sparse_mode_relaxed (kissat * solver, bool flush_eliminated,
   else
     kissat_watch_large_clauses (solver);
   LOG ("forcing to propagate units on all clauses");
-  solver->propagated = 0;
+  solver->propagate = 0;
 }

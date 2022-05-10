@@ -26,6 +26,7 @@ kissat_increase_phases (kissat * solver, unsigned new_size)
   increase_phases (best);
   increase_phases (saved);
   increase_phases (target);
+  increase_phases (relaxed);
 }
 
 void
@@ -37,6 +38,7 @@ kissat_decrease_phases (kissat * solver, unsigned new_size)
   realloc_phases (best);
   realloc_phases (saved);
   realloc_phases (target);
+  realloc_phases (relaxed);
 }
 
 #define release_phases(NAME, SIZE) \
@@ -49,6 +51,7 @@ kissat_release_phases (kissat * solver)
   release_phases (best, size);
   release_phases (saved, size);
   release_phases (target, size);
+  release_phases (relaxed, size);
 }
 
 static void
@@ -90,9 +93,7 @@ kissat_save_target_phases (kissat * solver)
 void
 kissat_save_relaxed_phases (kissat * solver)
 {
+  assert (sizeof (value) == 1);
   LOG ("saving %u relaxed values", VARS);
-  const value *v = solver->values;
-  for (all_phases (p))
-    p->relaxed = *v, v += 2;
-  assert (v == solver->values + LITS);
+  save_phases (solver, solver->phases.relaxed);
 }

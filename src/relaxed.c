@@ -41,22 +41,20 @@ bool kissat_meet_relaxed_condition(struct kissat *solver){
 }
 
 void kissat_restore_relaxed_phases (kissat *solver) {
-  const phase *phases = solver->phases;
-  const flags *flags = solver->flags;
+  value *const relaxed = solver->phases.relaxed;
+  const flags *const flags = solver->flags;
   value *values = solver->values;
   for (all_variables (idx))
     {
       if (!flags[idx].active)
 	continue;
-      const phase *p = phases + idx;
-      value	value = p->relaxed;
-      assert (value);
+      value value = 0;
+	    value = relaxed[idx];
       const unsigned lit = LIT (idx);
       const unsigned not_lit = NOT (lit);
       values[lit] = value;
       values[not_lit] = -value;
-      LOG ("copied variable %u relaxed phase %d", idx, (int) value);
-      printf("!!!relaxed %d ---> %d\n", idx, (int) value);
+      LOG ("copied %s relaxed phase %d", LOGVAR (idx), (int) value);
     }
 }
 
@@ -82,13 +80,13 @@ int kissat_relaxed_propagate (struct kissat *solver){
     // save
     kissat_save_relaxed_phases (solver);
     unsigned save_level = solver->level;
-    unsigned save_propagated = solver->propagated;
-    unsigneds save_trail = solver->trail;
+    // unsigned* save_propagated = solver->propagate.end;
+    // unsigned* save_trail = solver->trail.end;
 
     // clear
     solver->level = 0;
-    CLEAR_STACK (solver->trail);
-    solver->propagated = 0;
+    // CLEAR_STACK (solver->trail);
+    // CLEAR_STACK (solver->propagate);
 
     int res = 0;
     bool call_flag = kissat_call_relaxed_solver(solver);
@@ -96,10 +94,10 @@ int kissat_relaxed_propagate (struct kissat *solver){
         printf("relaxed failed, not complete yet.\n");
         // restore
         solver->level = save_level;
-        solver->propagated = save_propagated;
-        solver->trail = save_trail;
+        // solver->propagate.end = save_propagated;
+        // solver->trail.end = save_trail;
         kissat_restore_relaxed_phases(solver);
-        kissat_backtrack(solver,level_before_relaxed_call_ls - 1);
+        kissat_backtrack_without_updating_phases(solver, level_before_relaxed_call_ls);
         clause *conflict = kissat_search_propagate (solver);
         if (conflict) 
           res = kissat_analyze (solver, conflict);

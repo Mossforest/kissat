@@ -480,6 +480,7 @@ connect_large_counters_relaxed (walker * walker, unsigned counter_ref)
 {
   kissat *solver = walker->solver;
   assert (!solver->level);
+  const value *const saved = walker->saved;
   const value *const values = solver->values;
   ward *const arena = BEGIN_STACK (solver->arena);
   counter *counters = walker->counters;
@@ -1364,7 +1365,7 @@ kissat_walk_relaxed (kissat * solver)
   assert (!solver->inconsistent);
   assert (kissat_propagated (solver));
   STOP_SEARCH_AND_START_SIMPLIFIER (walking);
-  bool res = walking_phase (solver, first_time, use_previous_phase);
+  bool res = walking_relaxed (solver);
   STOP_SIMPLIFIER_AND_RESUME_SEARCH (walking);
   return res;
 }
